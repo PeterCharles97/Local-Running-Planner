@@ -32,7 +32,8 @@
 body{font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;background:var(--bg);color:var(--tx);-webkit-font-smoothing:antialiased;min-height:100vh;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 20px);}
 
 /* Header */
-.hdr{background:var(--card);border-bottom:1px solid var(--bd);padding:calc(env(safe-area-inset-top,0px) + 14px) 16px 12px;position:sticky;top:0;z-index:40;}
+.hdr{background:var(--card);border-bottom:1px solid var(--bd);padding:calc(env(safe-area-inset-top,0px) + 14px) 16px 12px;position:sticky;top:0;z-index:40;transition:transform .25s ease;}
+.hdr.hdr-hidden{transform:translateY(-100%);}
 .hdr-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}
 .hdr-title{font-size:21px;font-weight:700;letter-spacing:-.4px;}
 .hdr-sub{font-size:13px;color:var(--tx2);margin-top:2px;}
@@ -192,7 +193,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;ba
 .type-btn.on{background:var(--tx);color:var(--bg);border-color:var(--tx);}
 .preset-grid{grid-template-columns:1fr 1fr;}
 .preset-grid .type-btn{padding:13px 8px;font-size:12.5px;line-height:1.3;}
-.notesfield,.textinput{width:100%;padding:11px 13px;border-radius:var(--rsm);border:1px solid var(--bd);background:var(--bg);color:var(--tx);font-size:14px;font-family:inherit;resize:none;outline:none;-webkit-appearance:none;}
+.notesfield,.textinput{width:100%;padding:11px 13px;border-radius:var(--rsm);border:1px solid var(--bd);background:var(--bg);color:var(--tx);font-size:16px;font-family:inherit;resize:none;outline:none;-webkit-appearance:none;}
 .modal-acts{display:flex;gap:10px;margin-top:4px;}
 .mbtn-p{flex:1;padding:14px;border-radius:var(--rsm);background:var(--tx);color:var(--bg);border:none;font-size:15px;font-weight:600;cursor:pointer;}
 .mbtn-s{flex:1;padding:14px;border-radius:var(--rsm);background:var(--bg);color:var(--tx2);border:1px solid var(--bd);font-size:15px;cursor:pointer;}
@@ -201,7 +202,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;ba
 .dpick button{flex:1;height:34px;border:1px solid var(--bd);border-radius:var(--rxs);background:transparent;font-size:11px;font-weight:600;color:var(--tx3);cursor:pointer;font-family:inherit;}
 .dpick button.on{background:var(--tx);color:var(--bg);border-color:var(--tx);}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-.select-input{width:100%;padding:11px 13px;border-radius:var(--rsm);border:1px solid var(--bd);background:var(--bg);color:var(--tx);font-size:14px;font-family:inherit;}
+.select-input{width:100%;padding:11px 13px;border-radius:var(--rsm);border:1px solid var(--bd);background:var(--bg);color:var(--tx);font-size:16px;font-family:inherit;}
 .check-row{display:flex;align-items:center;gap:9px;}
 .match-list{display:flex;flex-direction:column;gap:6px;margin-top:10px;}
 .match-item{padding:10px 12px;border-radius:var(--rsm);border:1px solid var(--bd);background:var(--bg);font-size:13px;color:var(--tx2);cursor:pointer;text-align:left;font-family:inherit;}
@@ -2855,33 +2856,33 @@ function setupOffline(){
     document.head.appendChild(mLink);
   } catch(e){}
 
+  // Service worker for offline use + background updates. Browsers don't allow
+  // registering a SW from an inline blob, so this expects a small companion
+  // file `sw.js` uploaded next to this HTML (e.g. in the GitHub Pages repo).
+  // If sw.js isn't present, this fails silently and the app still works online.
   if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
-    try {
-      const swCode = `
-        const CACHE = 'rtp-v1';
-        const APP = location.href.replace(/[^/]*$/, '');
-        self.addEventListener('install', e => {
-          self.skipWaiting();
-          e.waitUntil(caches.open(CACHE).then(c => c.add(APP)).catch(()=>{}));
-        });
-        self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
-        self.addEventListener('fetch', e => {
-          if(e.request.method !== 'GET') return;
-          e.respondWith(
-            caches.match(e.request).then(hit => hit || fetch(e.request).then(res => {
-              const copy = res.clone();
-              caches.open(CACHE).then(c => c.put(e.request, copy)).catch(()=>{});
-              return res;
-            }).catch(() => caches.match(APP)))
-          );
-        });
-      `;
-      const swBlob = new Blob([swCode], {type:'text/javascript'});
-      navigator.serviceWorker.register(URL.createObjectURL(swBlob)).catch(()=>{});
-    } catch(e){}
+    try { navigator.serviceWorker.register('./sw.js').catch(()=>{}); } catch(e){}
   }
 }
 setupOffline();
+
+// Auto-hide the header when scrolling down (it's tall on mobile and obstructs
+// the plan); reveal it the moment the user scrolls back up or nears the top.
+(function(){
+  if(typeof window==='undefined' || typeof document==='undefined') return;
+  let lastY = 0;
+  try {
+    window.addEventListener('scroll', function(){
+      const hdr = document.querySelector('.hdr');
+      if(!hdr) return;
+      const y = window.scrollY || 0;
+      if(y < 60){ hdr.classList.remove('hdr-hidden'); }
+      else if(y > lastY + 6){ hdr.classList.add('hdr-hidden'); }      // scrolling down
+      else if(y < lastY - 6){ hdr.classList.remove('hdr-hidden'); }   // scrolling up
+      lastY = y;
+    }, {passive:true});
+  } catch(e){}
+})();
 
 // ── Install tutorial (device-aware) ─────────────────────────────────────────
 // On first open, if the app isn't already installed (running standalone), show
