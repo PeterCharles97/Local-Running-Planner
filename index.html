@@ -250,7 +250,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;ba
   <div id="preview-root"></div>
 
   <button class="garmin-btn" onclick="openGarmin()">⌚ Log a completed activity</button>
-  <div class="garmin-note">Manual entry for now — a real Garmin sync can plug into this same import path later.</div>
+  <div class="garmin-note">Log a run's actual distance, pace, and feel — it links to the planned session and sharpens future recommendations.</div>
 
   <div class="rules-sec" id="rules-root"></div>
 </div>
@@ -783,7 +783,6 @@ function defaultDB(){
       // Pruned to the last 6 entries. { cycleNumber, weekIndex, type, rate, keyDone, qualityPaceDeltaMin, cutShort, strain }
       weekHistory: []
     },
-    garmin: { connected:false, accountMeta:null }, // scaffold for future real integration
     meta: { lastPruneAt: null, onboarded: false, prevStatus: null, prevStableReturnWeeks: null, pendingSettingNote: null, datesRealigned: true, installPromptSeen: false }
   };
 }
@@ -1412,7 +1411,6 @@ function activeSymptoms(){
   if(ws.symptomWeek !== thisWeekMondayIso()) return [];
   return ws.symptoms || [];
 }
-function symptomsActive(){ return activeSymptoms().length > 0; }
 
 function nextBaselines(current, mode, focus){
   const c = { ...current };
@@ -2069,7 +2067,12 @@ function renderRecommendation(){
         ? `<button class="undo-btn" onclick="applyRacePhase('${rg.phase}')">Switch to ${PHASES[rg.phase].label}</button>`
         : '';
       html += `<div class="race-note"><span class="rec-ico">🏁</span><span>${rg.text}${switchBtn}</span></div>`;
-      // Second line: honest achievability check for a target time.
+      // Honest note when there isn't time for a full progression (late entry).
+      const entryNote = raceEntryNote();
+      if(entryNote){
+        html += `<div class="race-note warn"><span class="rec-ico">⏳</span><span>${entryNote}</span></div>`;
+      }
+      // Achievability check for a target time.
       const ach = raceAchievability();
       if(ach){
         const icon = ach.tone==='warn' ? '⚠️' : '🎯';
