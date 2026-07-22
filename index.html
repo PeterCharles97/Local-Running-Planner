@@ -199,6 +199,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;ba
 .mbtn-s{flex:1;padding:14px;border-radius:var(--rsm);background:var(--bg);color:var(--tx2);border:1px solid var(--bd);font-size:15px;cursor:pointer;}
 
 .dpick{display:flex;gap:3px;}
+.ob-intro{background:var(--bg);border-radius:var(--rsm);padding:12px 14px;margin-bottom:16px;}
+.ob-intro-row{display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.5;color:var(--tx2);}
+.ob-intro-row:not(:last-child){margin-bottom:8px;}
+.ob-intro-row span:first-child{flex-shrink:0;}
 .dpick button{flex:1;height:34px;border:1px solid var(--bd);border-radius:var(--rxs);background:transparent;font-size:11px;font-weight:600;color:var(--tx3);cursor:pointer;font-family:inherit;}
 .dpick button.on{background:var(--tx);color:var(--bg);border-color:var(--tx);}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
@@ -328,7 +332,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;ba
     <div class="form-grp">
       <label class="form-lbl">Runs per week</label>
       <select class="select-input" id="set-freq">
-        <option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option>
+        <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option>
       </select>
     </div>
     <div class="form-grp">
@@ -545,8 +549,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;ba
 <div class="overlay" id="onboardModal" onclick="onOverlayClick(event,'onboardModal')">
   <div class="sheet">
     <div class="sheet-handle"></div>
-    <div class="sheet-title" id="ob-title">Let's calibrate your plan</div>
-    <div class="sheet-sub" id="ob-sub">A few real numbers from recent training, so the first cycle starts at the right level instead of a generic default.</div>
+    <div class="sheet-title" id="ob-title">Welcome — let's set up your plan</div>
+    <div class="sheet-sub" id="ob-sub">This planner builds you a rolling 4-week running schedule that adapts as you go — it progresses when you're consistent, eases off when life or fatigue gets in the way, and never locks you into a rigid plan. A few quick answers get your first cycle starting at the right level.</div>
+
+    <div class="ob-intro" id="ob-intro">
+      <div class="ob-intro-row"><span>🔄</span><span>Rolling 4-week cycles that adjust to how your training actually goes</span></div>
+      <div class="ob-intro-row"><span>🎯</span><span>Point it at a race and it plans backwards to the day</span></div>
+      <div class="ob-intro-row"><span>📴</span><span>Works offline, keeps your data on your device</span></div>
+    </div>
+
+    <div class="form-grp">
+      <label class="form-lbl">Your name (optional)</label>
+      <input class="textinput" id="ob-name" type="text" placeholder="e.g. Alex">
+    </div>
 
     <div class="form-grp">
       <label class="form-lbl">Which best describes where you're starting from?</label>
@@ -556,6 +571,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;ba
         <button class="type-btn" onclick="pickPreset(this,'break')">Returning after a break</button>
         <button class="type-btn" onclick="pickPreset(this,'injury')">Returning from injury</button>
       </div>
+    </div>
+
+    <div class="form-grp">
+      <label class="form-lbl">Which days do you want to run? (tap to choose)</label>
+      <div class="dpick" id="ob-days">
+        <button onclick="toggleObDay(this,'Mon')">Mo</button>
+        <button onclick="toggleObDay(this,'Tue')">Tu</button>
+        <button onclick="toggleObDay(this,'Wed')">We</button>
+        <button onclick="toggleObDay(this,'Thu')">Th</button>
+        <button onclick="toggleObDay(this,'Fri')">Fr</button>
+        <button onclick="toggleObDay(this,'Sat')">Sa</button>
+        <button onclick="toggleObDay(this,'Sun')">Su</button>
+      </div>
+      <div class="ctrl-note" style="padding-top:6px;padding-bottom:0;">Pick as few as one day a week, or as many as you like — the plan fits whatever you choose. Your longest run goes on the last day selected.</div>
     </div>
     <div class="form-grp row2">
       <div>
@@ -571,7 +600,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;ba
       <div>
         <label class="form-lbl">Runs per week right now</label>
         <select class="select-input" id="ob-freq">
-          <option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option>
+          <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option>
         </select>
       </div>
       <div>
@@ -1123,7 +1152,14 @@ function makeEasySession(week, day, idx){
   };
 }
 function buildWeekSessions(week, ws){
-  const dayCount = Math.max(2, Math.min(ws.frequency, ws.preferredDays.length || 2));
+  const freq = Math.max(1, ws.frequency || 1);
+  // 1 run/week: a single session — the long run on the chosen day, which for a
+  // build week carries a light quality flavour so the one run still develops fitness.
+  if(freq === 1){
+    const day = ws.longRunDay || (ws.preferredDays && ws.preferredDays[0]) || 'Sat';
+    return [ makeLongSession(week, day) ];
+  }
+  const dayCount = Math.max(2, Math.min(freq, ws.preferredDays.length || 2));
   let days = ws.preferredDays.slice(0, dayCount);
   if(days.length===0) days = ['Tue','Thu','Sun'];
   if(!days.includes(ws.longRunDay)) days[days.length-1] = ws.longRunDay;
@@ -2734,19 +2770,26 @@ function manualLinkUI(resultId, sessionId){
 // instead of launching everyone on the same flat generic numbers.
 // ══════════════════════════════════════════════════════════════════════════
 let obPreset = 'consistent';
+let obDays = [];
 let obIsFirstRun = true;
 
 function openOnboarding(isFirstRun){
   obIsFirstRun = !!isFirstRun;
   const ws = DB.workspace;
-  document.getElementById('ob-title').textContent = obIsFirstRun ? "Let's calibrate your plan" : "Recalibrate from current level";
+  document.getElementById('ob-title').textContent = obIsFirstRun ? "Welcome — let's set up your plan" : "Recalibrate from current level";
   document.getElementById('ob-sub').textContent = obIsFirstRun
-    ? "A few real numbers from recent training, so the first cycle starts at the right level instead of a generic default."
+    ? "This planner builds you a rolling 4-week running schedule that adapts as you go — it progresses when you're consistent, eases off when life or fatigue gets in the way, and never locks you into a rigid plan. A few quick answers get your first cycle starting at the right level."
     : "Update these based on where things stand today — the current block will be rebuilt to match.";
   document.getElementById('ob-skip-btn').textContent = obIsFirstRun ? 'Skip — use general defaults' : 'Cancel';
+  // Intro explainer only makes sense on first run.
+  const intro = document.getElementById('ob-intro'); if(intro) intro.style.display = obIsFirstRun ? '' : 'none';
 
   obPreset = 'consistent';
   document.querySelectorAll('#ob-preset button').forEach(b=>b.classList.toggle('on', b.textContent==='Consistent base already'));
+  document.getElementById('ob-name').value = (ws.name && ws.name!=='Athlete') ? ws.name : '';
+  // Seed day picker from current preferred days.
+  obDays = [...(ws.preferredDays || [])];
+  document.querySelectorAll('#ob-days button').forEach((b,i)=> b.classList.toggle('on', obDays.includes(DAYS[i])));
   document.getElementById('ob-longest').value = ws.baselines.longKm;
   document.getElementById('ob-easy').value = ws.baselines.easyKm;
   document.getElementById('ob-hard').value = '';
@@ -2767,6 +2810,13 @@ function openOnboarding(isFirstRun){
 function pickPreset(btn, key){
   obPreset = key;
   document.querySelectorAll('#ob-preset button').forEach(b=>b.classList.toggle('on', b===btn));
+}
+function toggleObDay(btn, d){
+  if(obDays.includes(d)) obDays = obDays.filter(x=>x!==d);
+  else obDays.push(d);
+  btn.classList.toggle('on', obDays.includes(d));
+  // Keep frequency in sync with day count when the user picks days.
+  if(obDays.length>0) document.getElementById('ob-freq').value = Math.min(7, obDays.length);
 }
 function closeOnboarding(){ document.getElementById('onboardModal').classList.remove('open'); }
 
@@ -2799,13 +2849,23 @@ function applyIntakeAndCalibrate(){
   // Race time (if given) sets quality pace; otherwise fall back to typed/estimated.
   const paces = computeIntakePaces(obPreset, easyPaceIn, racePaceQual || qualPaceIn);
   const ws = DB.workspace;
+  // Name (optional).
+  const nameIn = (document.getElementById('ob-name').value || '').trim();
+  if(nameIn) ws.name = nameIn;
   ws.baselines = baselines;
   ws.paces = paces;
   // Store the recent race (distance + time) so the race achievability check can
   // predict times at other distances via Riegel. Only if both were given.
   if(hard > 0 && raceTime) { ws.calibRaceKm = hard; ws.calibRaceTimeMin = raceTime; }
   ws.frequency = freq;
-  ws.preferredDays = fitPreferredDaysToFrequency(ws.preferredDays, freq, ws.longRunDay);
+  // If the athlete chose specific days, honour them (in weekday order) and put
+  // the long run on the last chosen day. Otherwise keep/fit existing days.
+  if(obDays.length > 0){
+    ws.preferredDays = DAYS.filter(d=>obDays.includes(d));
+    ws.longRunDay = ws.preferredDays[ws.preferredDays.length-1];
+  } else {
+    ws.preferredDays = fitPreferredDaysToFrequency(ws.preferredDays, freq, ws.longRunDay);
+  }
   ws.conservatism = preset.conservatism;
   ws.returnToRunMode = preset.returnToRunMode;
   ws.focus = document.getElementById('ob-focus').value;
