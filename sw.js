@@ -4,12 +4,13 @@
 //   • At the same time, fetch the latest version in the background and update
 //     the cache — so changes pushed to GitHub Pages appear on the NEXT open.
 // localStorage (the athlete's plan data) is untouched by any of this.
-const CACHE = 'rtp-v2';
+const CACHE = 'rtp-v3';
+const APP_FILES = ['./', './styles.css', './app.js'];
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();
   e.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(['./'])).catch(() => {})
+    caches.open(CACHE).then((c) => c.addAll(APP_FILES)).catch(() => {})
   );
 });
 
