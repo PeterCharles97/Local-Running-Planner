@@ -150,6 +150,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;ba
 
 /* Add workout button */
 .add-wk-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:calc(100% - 32px);margin:12px 16px 4px;padding:12px;border-radius:var(--rsm);border:1.5px dashed var(--bd);background:transparent;color:var(--tx3);font-size:14px;cursor:pointer;-webkit-tap-highlight-color:transparent;font-family:inherit;}
+.edit-block-btn{display:block;width:calc(100% - 32px);margin:10px 16px 4px;padding:11px 12px;border:1px solid var(--bd);border-radius:var(--rsm);background:var(--bl-bg);color:var(--bl-tx);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;}
 
 /* Preview / gap cards */
 .preview-card{background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:10px;border:1.5px dashed var(--bd);}
@@ -201,3 +202,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;ba
 .check-row{display:flex;align-items:center;gap:9px;}
 .match-list{display:flex;flex-direction:column;gap:6px;margin-top:10px;}
 .match-item{padding:10px 12px;border-radius:var(--rsm);border:1px solid var(--bd);background:var(--bg);font-size:13px;color:var(--tx2);cursor:pointer;text-align:left;font-family:inherit;}
+.manual-week-card{background:var(--bg);border:1px solid var(--bd);border-radius:var(--rsm);padding:12px;margin-bottom:10px;}
+.manual-week-title{font-size:13px;font-weight:700;margin-bottom:3px;}
+.manual-edit-note{font-size:11px;color:var(--tx3);margin:5px 0 8px;line-height:1.4;}
+.manual-week-total{font-size:11.5px;color:var(--tx3);margin-bottom:10px;}
+.manual-run-list{display:grid;gap:8px;}
+.manual-run-card{padding:10px;border-radius:var(--rxs);background:var(--card);border:1px solid var(--bd2);}
+.manual-run-title{font-size:12px;font-weight:700;margin-bottom:9px;}
+.manual-run-distance{max-width:180px;margin-bottom:10px;}
+.manual-run-card .form-lbl{font-size:11px;margin:9px 0 5px;}
+.manual-run-card .textinput,.manual-run-card .notesfield,.manual-run-card .select-input{font-size:14px;padding:9px 10px;}
+.manual-run-card .notesfield{min-height:54px;}
+.manual-sub-label{margin-top:9px;}

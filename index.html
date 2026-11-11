@@ -43,7 +43,7 @@
   </div>
   <div class="sec-body" id="ctrl-body">
     <div class="ctrl-grid" id="ctrl-grid"></div>
-    <div class="ctrl-note">These generate or adjust upcoming weeks using the same rules as automatic generation — nothing here is a permanent override, you can always rebuild a block again.</div>
+    <div class="ctrl-note">Open the active week to edit its unfinished runs in place. Automatic controls use your settings and history; manual blocks let you set each run yourself.</div>
   </div>
 
   <div id="weeks-root"></div>
@@ -91,6 +91,60 @@
     <div class="modal-acts">
       <button class="mbtn-s" onclick="closeModal()">Cancel</button>
       <button class="mbtn-p" id="modal-save-btn" onclick="saveWorkout()">Save workout</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manual training block builder -->
+<div class="overlay" id="manualBlockModal" onclick="onOverlayClick(event,'manualBlockModal')">
+  <div class="sheet manual-sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title" id="manual-title">Create a manual block</div>
+    <div class="sheet-sub" id="manual-sub">Set your running days, then customize each run's distance and workout in every week.</div>
+
+    <div class="form-grp" id="manual-mode-wrap" style="display:none;">
+      <label class="form-lbl" for="manual-mode">Suggested change from your last manual block</label>
+      <select class="select-input" id="manual-mode" onchange="updateManualDraftFromMode()">
+        <option value="progress">Progress gradually</option>
+        <option value="hold">Repeat the same load</option>
+        <option value="reduce">Reduce the load</option>
+      </select>
+      <div class="ctrl-note">This only creates an editable suggestion. Changing it resets the distances while keeping your per-run workout details. Review every week before adding.</div>
+    </div>
+
+    <div id="manual-day-settings">
+    <div class="form-grp">
+      <label class="form-lbl">Run days (choose one to seven)</label>
+      <div class="dpick" id="manual-days">
+        <button type="button" onclick="toggleManualDay(this,'Mon')">Mo</button>
+        <button type="button" onclick="toggleManualDay(this,'Tue')">Tu</button>
+        <button type="button" onclick="toggleManualDay(this,'Wed')">We</button>
+        <button type="button" onclick="toggleManualDay(this,'Thu')">Th</button>
+        <button type="button" onclick="toggleManualDay(this,'Fri')">Fr</button>
+        <button type="button" onclick="toggleManualDay(this,'Sat')">Sa</button>
+        <button type="button" onclick="toggleManualDay(this,'Sun')">Su</button>
+      </div>
+      <div class="ctrl-note" id="manual-days-note">Choose the days you want to run. One session will be scheduled on each selected day.</div>
+    </div>
+
+    <div class="form-grp row2">
+      <div>
+        <label class="form-lbl" for="manual-longday">Long-run day</label>
+        <select class="select-input" id="manual-longday" onchange="updateManualDayOptions()"></select>
+      </div>
+      <div id="manual-qualityday-wrap">
+        <label class="form-lbl" for="manual-qualityday">Quality-run day</label>
+        <select class="select-input" id="manual-qualityday" onchange="updateManualDayOptions()"></select>
+      </div>
+    </div>
+    </div>
+
+    <div id="manual-weeks"></div>
+    <div class="ctrl-note">Week 4 is labeled deload, but its distances and workout are exactly what you enter here—reduce the load yourself as appropriate.</div>
+    <div class="ctrl-note" id="manual-schedule-note">The block is scheduled after the weeks already in your plan. Distances are your inputs; review the weekly total before saving.</div>
+    <div class="modal-acts">
+      <button class="mbtn-s" onclick="closeManualBlock()">Cancel</button>
+      <button class="mbtn-p" id="manual-save-btn" onclick="saveManualBlock()">Add block to plan</button>
     </div>
   </div>
 </div>

@@ -497,10 +497,101 @@ function buildWeekSessions(week, ws){
   return sessions;
 }
 
+function escapeManualText(value){
+  return String(value).replace(/[&<>"']/g, ch => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  })[ch]);
+}
+function manualRunsForWeek(weekPlan,plan){
+  const priorRuns = Array.isArray(weekPlan.runs) ? weekPlan.runs : [];
+  const qualityPace = paceRangeStr(safePaces(DB.workspace.paces).qualityMin,0.083);
+  return plan.days.map((day,index)=>{
+    const role = day===plan.longRunDay ? 'long' : day===plan.qualityDay ? 'quality' : 'easy';
+    const prior = priorRuns.find(run=>run.day===day);
+    if(plan.preserveRoles && !prior) return null;
+    const resolvedRole = plan.preserveRoles && prior ? prior.role : role;
+    const legacyDistance = resolvedRole==='long' ? weekPlan.longKm
+      : resolvedRole==='quality' ? weekPlan.qualityKm : weekPlan.easyKm;
+    return {
+      ...prior, day, role:resolvedRole,
+      distanceKm:prior ? prior.distanceKm : legacyDistance,
+      details:prior ? (prior.details || '') : resolvedRole==='long'
+        ? (weekPlan.longDescription || plan.longDescription || 'Comfortable, conversational effort.')
+        : resolvedRole==='easy' ? (weekPlan.easyDescription || plan.easyDescription || 'Relaxed effort; finish feeling fresh.') : '',
+      workoutType:prior ? (prior.workoutType || 'Intervals') : 'Intervals',
+      intervalStructure:prior ? (prior.intervalStructure || weekPlan.qualityDescription || '')
+        : weekPlan.qualityDescription || (index===3
+          ? 'Easy running with a few relaxed strides only.'
+          : 'Controlled quality work; keep the hard portions sustainable.'),
+      targetPace:prior ? (prior.targetPace || qualityPace) : qualityPace
+    };
+  }).filter(Boolean);
+}
+function summarizeManualRuns(runs){
+  const totalFor = role=>round1(runs.filter(run=>run.role===role)
+    .reduce((total,run)=>total+(parseFloat(run.distanceKm)||0),0));
+  const easyRuns = runs.filter(run=>run.role==='easy');
+  return {
+    longKm:totalFor('long'),
+    qualityKm:totalFor('quality'),
+    easyKm:easyRuns.length
+      ? round1(easyRuns.reduce((total,run)=>total+(parseFloat(run.distanceKm)||0),0)/easyRuns.length)
+      : 0
+  };
+}
+function parseManualPace(value,fallback){
+  const paceText = String(value).trim();
+  const clockPaces = Array.from(paceText.matchAll(/(\d{1,2}):([0-5]\d)/g))
+    .map(match=>Number(match[1])+Number(match[2])/60);
+  if(clockPaces.length) return clockPaces.reduce((sum,pace)=>sum+pace,0)/clockPaces.length;
+  const decimalPaces = Array.from(paceText.matchAll(/(?:^|[^\d])(\d+(?:\.\d+)?)(?=$|[^\d])/g))
+    .map(match=>Number(match[1])).filter(pace=>pace>0&&pace<30);
+  return decimalPaces.length
+    ? decimalPaces.reduce((sum,pace)=>sum+pace,0)/decimalPaces.length
+    : fallback;
+}
+function buildManualWeekSessions(week, plan, weekPlan){
+  return manualRunsForWeek(weekPlan,plan).map((run,index)=>{
+    const distance = round1(parseFloat(run.distanceKm)||0);
+    let session;
+    if(run.role==='long'){
+      session = makeLongSession(week,run.day);
+      session.title = 'Long run';
+      session.shortDesc = `${distance} km`;
+      session.main = `${distance} km. ${escapeManualText(run.details)}`;
+      session.effortNote = '';
+    } else if(run.role==='quality'){
+      const pace = run.targetPace.trim() || paceRangeStr(week.paces.qualityMin,0.083);
+      session = makeQualitySession(week,run.day);
+      session.title = 'Quality run';
+      session.shortDesc = `${distance} km · ${escapeManualText(pace)}`;
+      session.main = `${distance} km. ${escapeManualText(run.workoutType)}: ${escapeManualText(run.intervalStructure)}. Target pace: ${escapeManualText(pace)}.`;
+      session.qualityType = escapeManualText(run.workoutType);
+      session.targetPace = escapeManualText(pace);
+      session.paceTargetMin = parseManualPace(pace,week.paces.qualityMin);
+      session.cautionNote = 'Keep 48–72 hrs clear of heavy strength work before this session.';
+    } else {
+      session = makeEasySession(week,run.day,index);
+      session.title = 'Easy run';
+      session.shortDesc = `${distance} km · ${paceRangeStr(week.paces.easyMin,0.25)}`;
+      session.main = `${distance} km. ${escapeManualText(run.details)}`;
+      session.effortNote = '';
+    }
+    session.id = run.sessionId || `${week.id}_${run.role}_${index}`;
+    session.day = run.day;
+    session.def = run.day;
+    session.targetDistanceKm = distance;
+    session.priority = run.role==='quality' ? 'key' : 'optional';
+    return session;
+  });
+}
+
 function weekVolume(week){
+  const longTotal = week.sessions.filter(s=>s.role==='long').reduce((a,s)=>a+s.targetDistanceKm,0);
+  const qualityTotal = week.sessions.filter(s=>s.role==='quality').reduce((a,s)=>a+s.targetDistanceKm,0);
   const easyTotal = week.sessions.filter(s=>s.role==='easy').reduce((a,s)=>a+s.targetDistanceKm,0);
-  const total = round1(week.dist.long + week.dist.quality + easyTotal);
-  return { tot: total+' km', q: week.dist.quality+' km', lr: week.dist.long+' km' };
+  const total = round1(longTotal + qualityTotal + easyTotal);
+  return { tot: total+' km', q: round1(qualityTotal)+' km', lr: round1(longTotal)+' km' };
 }
 
 // ── Day-one calibration ──────────────────────────────────────────────────
@@ -918,6 +1009,39 @@ function rebuildCurrentBlock(){
   const cycleEntry = DB.cycles.find(c=>c.number===cycleNumber);
   const oldWeeks = DB.weeks.filter(w=>w.cycleNumber===cycleNumber).sort((a,b)=>a.startDate.localeCompare(b.startDate));
   if(oldWeeks.length===0) return;
+  if(cycleEntry && cycleEntry.manualPlan){
+    const plan = cycleEntry.manualPlan;
+    const paces = safePaces(cycleEntry.paces);
+    const activeWeek=findCurrentWeek();
+    const editableFrom=activeWeek ? activeWeek.startDate : isoDate(new Date());
+    const rebuilt = oldWeeks.map(oldWeek=>{
+      if(oldWeek.startDate<editableFrom||oldWeek.finalized) return oldWeek;
+      const weekIndex = oldWeek.cycleWeekIndex;
+      const weekPlan = plan.weeks[weekIndex];
+      if(!weekPlan) return oldWeek;
+      const currentRuns=manualRunsForWeek(weekPlan,plan).map(run=>{
+        const existing=oldWeek.sessions.find(session=>session.role===run.role&&session.def===run.day);
+        return {...run,sessionId:run.sessionId||(existing&&existing.id),completed:existing?getDone(existing.id):false};
+      });
+      const editablePlan={...plan,days:currentRuns.map(run=>run.day)};
+      const rebuiltWeekPlan={...weekPlan,runs:currentRuns};
+      const distances = summarizeManualRuns(currentRuns);
+      const week = {
+        ...oldWeek,
+        dist:{long:distances.longKm, quality:distances.qualityKm, easy:distances.easyKm},
+        paces, sessions:[], manual:true
+      };
+      const generated=buildManualWeekSessions(week,editablePlan,rebuiltWeekPlan);
+      const generatedIds=new Set(generated.map(session=>session.id));
+      const completed=oldWeek.sessions.filter(session=>getDone(session.id));
+      const untouched=oldWeek.sessions.filter(session=>!generatedIds.has(session.id));
+      week.sessions=[...generated.filter(session=>!getDone(session.id)),...completed,...untouched];
+      return week;
+    });
+    DB.weeks = DB.weeks.filter(w=>w.cycleNumber!==cycleNumber).concat(rebuilt);
+    save();
+    return;
+  }
   const anchor = parseDate(oldWeeks[0].startDate);
   const types = oldWeeks.map(w=>w.type);
   const baselines = safeBaselines(cycleEntry ? cycleEntry.baselines : DB.workspace.baselines);
@@ -1508,7 +1632,7 @@ function renderEffort(){
 }
 
 function renderControls(){
-  const rec = computeRecommendation();
+  const manualBlockExists = DB.cycles.some(c=>c.manualPlan);
   const buttons = [
     {l:'Generate next cycle (recommended)', fn:`generateNextCycle()`},
     {l:'Progress next cycle', fn:`generateNextCycle('progress')`},
@@ -1520,9 +1644,465 @@ function renderControls(){
     {l:'Recalibrate from current level', fn:`openOnboarding(false)`},
     {l:'Remove extra upcoming cycles', fn:`removeAllUpcomingCycles()`, danger:true}
   ];
+  buttons.push({l:'Create a manual block', fn:`openManualBlock('new')`});
+  if(manualBlockExists) buttons.push({l:'Draft next block from manual block', fn:`openManualBlock('next')`});
   document.getElementById('ctrl-grid').innerHTML = buttons.map(b=>
     `<button class="ctrl-btn ${b.danger?'danger':''}" onclick="${b.fn}">${b.l}</button>`
   ).join('');
+}
+
+let manualBuilderKind = 'new';
+let manualBuilderSource = null;
+let manualSelectedDays = [];
+let manualWorkingPlan = null;
+
+function latestManualCycle(){
+  return DB.cycles.filter(c=>c.manualPlan).sort((a,b)=>b.number-a.number)[0] || null;
+}
+function editablePlanFromCycle(cycle,currentWeek){
+  const cycleWeeks = DB.weeks.filter(week=>week.cycleNumber===cycle.number)
+    .sort((a,b)=>a.cycleWeekIndex-b.cycleWeekIndex);
+  const days = DAYS.filter(day=>cycleWeeks.some(week=>week.sessions.some(session=>session.def===day)));
+  const longRunDay = days.find(day=>cycleWeeks.some(week=>week.sessions.some(session=>session.def===day&&session.role==='long')))
+    || days[days.length-1];
+  const qualityDay = days.find(day=>day!==longRunDay&&cycleWeeks.some(week=>week.sessions.some(session=>session.def===day&&session.role==='quality')))
+    || days.find(day=>day!==longRunDay) || null;
+  const weeks = cycleWeeks.map(week=>{
+    const readOnly=week.startDate<currentWeek.startDate||week.finalized;
+    const runs=week.sessions.map(session=>{
+      const effectiveRole=session.role==='long'||session.role==='quality' ? session.role : 'easy';
+      const main=String(session.main||'').replace(/^\s*\d+(?:\.\d+)?\s*km\.\s*/i,'');
+      const intervalStructure=effectiveRole==='quality'
+        ? main.replace(/\s*Target pace:.*$/i,'').replace(/^\s*[^:]+:\s*/,'').trim()
+        : '';
+      return {
+        sessionId:session.id,
+        day:session.def,
+        scheduledDay:getDay(session.id,session.def),
+        role:effectiveRole,
+        distanceKm:session.targetDistanceKm,
+        details:effectiveRole==='quality'?'':main,
+        workoutType:session.qualityType||'Intervals',
+        intervalStructure,
+        targetPace:session.targetPace||paceRangeStr(week.paces.qualityMin,0.083),
+        completed:getDone(session.id)
+      };
+    });
+    const summary=summarizeManualRuns(runs);
+    return {
+      ...summary,
+      qualityDescription:(runs.find(run=>run.role==='quality')||{}).intervalStructure||'',
+      runs,readOnly,
+      label:`Week ${week.cycleWeekIndex+1}${week.type==='deload'?' · Deload':week.type==='recovery'?' · Re-entry':''}`
+    };
+  });
+  const baselines=safeBaselines(cycle.baselines);
+  return {
+    days,longRunDay,qualityDay,baselines,weeks,preserveRoles:true,
+    paces:safePaces(cycle.paces)
+  };
+}
+function openCurrentBlockEditor(cycleNumber){
+  const currentWeek=findCurrentWeek();
+  if(!currentWeek||currentWeek.cycleNumber!==cycleNumber){
+    alert('The current week could not be found. Open this editor from the active block.');
+    return;
+  }
+  const cycle=DB.cycles.find(entry=>entry.number===cycleNumber);
+  if(!cycle){
+    alert('The training block could not be found.');
+    return;
+  }
+  manualBuilderKind='edit';
+  manualBuilderSource=cycle;
+  manualWorkingPlan=editablePlanFromCycle(cycle,currentWeek);
+  manualSelectedDays=manualWorkingPlan.days.slice();
+  document.getElementById('manual-title').textContent='Edit this training block';
+  document.getElementById('manual-sub').textContent='Changes apply to unfinished runs from this week onward. Completed runs and prior weeks stay unchanged.';
+  document.getElementById('manual-save-btn').textContent='Save block edits';
+  document.getElementById('manual-mode-wrap').style.display='none';
+  document.getElementById('manual-day-settings').style.display='none';
+  document.getElementById('manual-longday').innerHTML=manualSelectedDays.map(day=>`<option value="${day}">${day}</option>`).join('');
+  document.getElementById('manual-qualityday').innerHTML=manualSelectedDays.filter(day=>day!==manualWorkingPlan.longRunDay)
+    .map(day=>`<option value="${day}">${day}</option>`).join('')||'<option value="">Not scheduled</option>';
+  document.getElementById('manual-longday').value=manualWorkingPlan.longRunDay||'';
+  document.getElementById('manual-qualityday').value=manualWorkingPlan.qualityDay||'';
+  document.getElementById('manual-weeks').innerHTML='';
+  manualWorkingPlan.weeks.forEach(week=>{
+    week.runs.forEach(run=>{
+      run.completed=!!run.completed;
+    });
+  });
+  renderManualWeeks(manualWorkingPlan.weeks);
+  document.getElementById('manual-schedule-note').textContent='Completed runs and weeks before the current week are preserved. Save updates the remaining runs in this block without adding another block.';
+  document.getElementById('manualBlockModal').classList.add('open');
+}
+function defaultManualPlan(){
+  const ws = DB.workspace;
+  const days = DAYS.filter(day=>(ws.preferredDays || []).includes(day));
+  const selectedDays = days.length ? days : ['Tue','Thu','Sat','Sun'];
+  const longRunDay = selectedDays.includes(ws.longRunDay) ? ws.longRunDay : selectedDays[selectedDays.length-1];
+  const qualityDay = selectedDays.find(day=>day!==longRunDay) || null;
+  const baselines = safeBaselines(ws.baselines);
+  const distances = [0.85, 0.93, 1].map(factor=>({
+    longKm:round1(baselines.longKm*factor),
+    qualityKm:round1(baselines.qualityKm*factor),
+    easyKm:round1(baselines.easyKm*factor)
+  }));
+  distances.push({
+    longKm:round1(baselines.longKm*0.55),
+    qualityKm:round1(baselines.qualityKm*0.6),
+    easyKm:round1(baselines.easyKm*0.7)
+  });
+  const plan = {days:selectedDays,longRunDay,qualityDay,baselines:{...distances[2]},weeks:[]};
+  plan.weeks = distances.map((dist,index)=>{
+    const weekPlan = {
+      ...dist,
+      qualityDescription:index===3
+        ? 'Easy running with a few relaxed strides only.'
+        : 'Controlled quality work; keep the hard portions sustainable.'
+    };
+    weekPlan.runs = manualRunsForWeek(weekPlan,plan);
+    return weekPlan;
+  });
+  return plan;
+}
+function manualPlanForMode(mode){
+  if(!manualBuilderSource) return defaultManualPlan();
+  const source = manualBuilderSource.manualPlan;
+  const previousBaselines = safeBaselines(source.baselines || manualBuilderSource.baselines);
+  const previousPaces = safePaces(manualBuilderSource.paces);
+  const baselines = nextBaselines(previousBaselines, mode, DB.workspace.focus);
+  const paceDelta = DB.rolling.recentQualityPaceDeltaMin;
+  const paces = nextPaces(
+    previousPaces, mode,
+    DB.workspace.conservatism==='conservative' || DB.workspace.returnToRunMode,
+    paceDelta, DB.workspace.focus
+  );
+  const weeks = source.weeks.map(week=>{
+    const {readOnly,label,...weekData}=week;
+    return {
+    ...weekData,
+    runs:manualRunsForWeek(week,source).map(run=>{
+      const previousBase = run.role==='long' ? previousBaselines.longKm
+        : run.role==='quality' ? previousBaselines.qualityKm : previousBaselines.easyKm;
+      const nextBase = run.role==='long' ? baselines.longKm
+        : run.role==='quality' ? baselines.qualityKm : baselines.easyKm;
+      const {sessionId,completed,scheduledDay,...runData}=run;
+      return {...runData,sessionId:null,completed:false,distanceKm:round1(run.distanceKm*nextBase/Math.max(previousBase,0.1))};
+    })
+  };});
+  weeks.forEach(week=>Object.assign(week,summarizeManualRuns(week.runs)));
+  return {...source, baselines, paces, weeks, preserveRoles:false};
+}
+function renderManualWeeks(weeks){
+  const labels = ['Build week 1','Build week 2','Build week 3','Deload week'];
+  if(!manualWorkingPlan) return;
+  manualWorkingPlan.weeks = weeks;
+  document.getElementById('manual-weeks').innerHTML = weeks.map((week,index)=>{
+    const runs = manualWorkingPlan.days.length
+      ? manualRunsForWeek(week,manualWorkingPlan)
+      : [];
+    if(manualWorkingPlan.days.length){
+      const inactiveRuns = (week.runs || []).filter(run=>!manualWorkingPlan.days.includes(run.day));
+      week.runs = [...runs,...inactiveRuns];
+    }
+    const weekDisabled = week.readOnly ? 'disabled' : '';
+    return `<div class="manual-week-card">
+      <div class="manual-week-title">${escapeManualText(week.label || labels[index] || `Week ${index+1}`)}</div>
+      ${week.readOnly ? '<div class="manual-edit-note">This week is already complete and will not be changed.</div>' : ''}
+      <div class="manual-week-total" id="manual-week-total-${index}"></div>
+      <div class="manual-run-list">${runs.map(run=>`
+        <section class="manual-run-card">
+          <div class="manual-run-title">${run.scheduledDay&&run.scheduledDay!==run.day?`${run.scheduledDay} (moved) · `:''}${run.day} · ${run.role==='long'?'Long run':run.role==='quality'?'Quality run':'Easy run'}</div>
+          ${run.completed ? '<div class="manual-edit-note">Completed run — kept as-is.</div>' : ''}
+          <div class="manual-run-distance">
+            <label class="form-lbl" for="manual-distance-${index}-${run.day}">Distance (km)</label>
+            <input class="textinput" id="manual-distance-${index}-${run.day}" type="number" step="0.1" min="0.1" value="${escapeManualText(run.distanceKm)}" oninput="updateManualWeekTotal(${index})" ${weekDisabled}${run.completed?' disabled':''}>
+          </div>
+          ${run.role==='quality' ? `
+            <label class="form-lbl" for="manual-quality-type-${index}-${run.day}">Workout type</label>
+            <select class="select-input" id="manual-quality-type-${index}-${run.day}" ${weekDisabled}${run.completed?' disabled':''}>
+              ${Array.from(new Set(['Intervals','Tempo / threshold','Hills','Fartlek','Strides','Other',run.workoutType])).map(type=>`<option value="${escapeManualText(type)}" ${run.workoutType===type?'selected':''}>${escapeManualText(type)}</option>`).join('')}
+            </select>
+            <label class="form-lbl" for="manual-intervals-${index}-${run.day}">Intervals and execution</label>
+            <textarea class="notesfield" id="manual-intervals-${index}-${run.day}" rows="2" placeholder="e.g. 5 × 1 km, 2 min easy jog recovery" ${weekDisabled}${run.completed?' disabled':''}>${escapeManualText(run.intervalStructure)}</textarea>
+            <label class="form-lbl manual-sub-label" for="manual-pace-${index}-${run.day}">Target pace</label>
+            <input class="textinput" id="manual-pace-${index}-${run.day}" type="text" value="${escapeManualText(run.targetPace)}" placeholder="e.g. 4:45–5:00 min/km" ${weekDisabled}${run.completed?' disabled':''}>
+          ` : `
+            <label class="form-lbl" for="manual-details-${index}-${run.day}">${run.role==='long'?'Long-run execution':'Easy-run notes'}</label>
+            <textarea class="notesfield" id="manual-details-${index}-${run.day}" rows="2" placeholder="${run.role==='long'?'e.g. Easy first 8 km, then steady finish':'e.g. Keep this one short and relaxed'}" ${weekDisabled}${run.completed?' disabled':''}>${escapeManualText(run.details)}</textarea>
+          `}
+        </section>
+      `).join('')}</div>
+    </div>`;
+  }).join('');
+  weeks.forEach((week,index)=>updateManualWeekTotal(index));
+}
+function updateManualWeekTotal(index){
+  const total = manualSelectedDays.reduce((sum,day)=>{
+    const input = document.getElementById(`manual-distance-${index}-${day}`);
+    return sum+(input ? parseFloat(input.value)||0 : 0);
+  },0);
+  document.getElementById('manual-week-total-'+index).textContent = `Planned total: ${round1(total)} km this week`;
+}
+function updateManualTotals(){
+  for(let i=0;i<4;i++) updateManualWeekTotal(i);
+  const easyCount = Math.max(0, manualSelectedDays.length - (manualSelectedDays.length ? 1 : 0) - (manualSelectedDays.length>1 ? 1 : 0));
+  const types = manualSelectedDays.length===1 ? 'long run only'
+    : `1 long, 1 quality, ${easyCount} easy`;
+  document.getElementById('manual-days-note').textContent =
+    `${manualSelectedDays.length} run${manualSelectedDays.length===1?'':'s'} per week · ${types}.`;
+}
+function captureManualWeeksFromForm(){
+  if(!manualWorkingPlan) return [];
+  return manualWorkingPlan.weeks.map((week,index)=>{
+    const runs = manualWorkingPlan.days.map(day=>{
+      const previous = (week.runs || []).find(run=>run.day===day);
+      if(manualWorkingPlan.preserveRoles && !previous) return null;
+      const role = manualWorkingPlan.preserveRoles ? previous.role
+        : day===document.getElementById('manual-longday').value ? 'long'
+        : day===document.getElementById('manual-qualityday').value ? 'quality' : 'easy';
+      const read = suffix=>document.getElementById(`manual-${suffix}-${index}-${day}`);
+      const distanceInput = read('distance');
+      const detailsInput = read('details');
+      const qualityTypeInput = read('quality-type');
+      const intervalsInput = read('intervals');
+      const paceInput = read('pace');
+      return {
+        ...previous,
+        day,role,
+        distanceKm:distanceInput ? parseFloat(distanceInput.value) : (previous ? previous.distanceKm : 0),
+        details:detailsInput ? detailsInput.value : (previous ? previous.details : ''),
+        workoutType:qualityTypeInput ? qualityTypeInput.value : (previous ? previous.workoutType : 'Intervals'),
+        intervalStructure:intervalsInput ? intervalsInput.value : (previous ? previous.intervalStructure : ''),
+        targetPace:paceInput ? paceInput.value : (previous ? previous.targetPace : '')
+      };
+    });
+    const capturedRuns = runs.filter(Boolean);
+    const inactiveRuns = (week.runs || []).filter(run=>!manualWorkingPlan.days.includes(run.day));
+    const activeRuns = capturedRuns.filter(run=>manualWorkingPlan.days.includes(run.day));
+    const summary = summarizeManualRuns(activeRuns);
+    return {
+      ...week,...summary,runs:[...activeRuns,...inactiveRuns],
+      qualityDescription:(activeRuns.find(run=>run.role==='quality')||{}).intervalStructure||''
+    };
+  });
+}
+function updateManualScheduleNote(start){
+  const end = addDays(start,27);
+  let note = `Scheduled ${fmtRange(isoDate(start),isoDate(end))} after all weeks already in your plan.`;
+  if(DB.workspace.raceDate){
+    const race = parseDate(DB.workspace.raceDate);
+    note += ' Race dates are a reminder only; manual blocks do not automatically taper or stop on race day.';
+    if(race>=start && race<=end){
+      note += ' This block overlaps your race date—adjust the weeks so the plan does not schedule runs after the event.';
+    } else if(race<start){
+      note += ' This block starts after your saved race date.';
+    }
+  }
+  document.getElementById('manual-schedule-note').textContent = note;
+}
+function updateManualDayOptions(){
+  if(manualWorkingPlan && manualWorkingPlan.days.length) manualWorkingPlan.weeks = captureManualWeeksFromForm();
+  const longSelect = document.getElementById('manual-longday');
+  const qualitySelect = document.getElementById('manual-qualityday');
+  const previousLong = longSelect.value;
+  const previousQuality = qualitySelect.value;
+  const options = manualSelectedDays.map(day=>`<option value="${day}">${day}</option>`).join('');
+  longSelect.innerHTML = options || '<option value="">Choose run days first</option>';
+  if(manualSelectedDays.includes(previousLong)) longSelect.value = previousLong;
+  else if(manualSelectedDays.length) longSelect.value = manualSelectedDays[manualSelectedDays.length-1];
+
+  const otherDays = manualSelectedDays.filter(day=>day!==longSelect.value);
+  qualitySelect.innerHTML = otherDays.map(day=>`<option value="${day}">${day}</option>`).join('')
+    || '<option value="">Not scheduled</option>';
+  if(otherDays.includes(previousQuality)) qualitySelect.value = previousQuality;
+  else if(otherDays.length) qualitySelect.value = otherDays[0];
+  document.getElementById('manual-qualityday-wrap').style.display = otherDays.length ? '' : 'none';
+  if(manualWorkingPlan){
+    manualWorkingPlan.days = manualSelectedDays.slice();
+    manualWorkingPlan.longRunDay = longSelect.value;
+    manualWorkingPlan.qualityDay = qualitySelect.value || null;
+    renderManualWeeks(manualWorkingPlan.weeks);
+  }
+  updateManualTotals();
+}
+function toggleManualDay(btn,day){
+  if(manualWorkingPlan && manualWorkingPlan.days.length) manualWorkingPlan.weeks = captureManualWeeksFromForm();
+  if(manualSelectedDays.includes(day)) manualSelectedDays = manualSelectedDays.filter(value=>value!==day);
+  else manualSelectedDays.push(day);
+  manualSelectedDays = DAYS.filter(value=>manualSelectedDays.includes(value));
+  document.querySelectorAll('#manual-days button').forEach(button=>{
+    const buttonDay = DAYS.find(value=>button.textContent===value.slice(0,2));
+    button.classList.toggle('on', manualSelectedDays.includes(buttonDay));
+  });
+  updateManualDayOptions();
+}
+function openManualBlock(kind){
+  manualBuilderKind = kind;
+  manualBuilderSource = kind==='next' ? latestManualCycle() : null;
+  if(kind==='next' && !manualBuilderSource){
+    alert('Create a manual block first before drafting its next block.');
+    return;
+  }
+  let plan;
+  if(kind==='next'){
+    const action = computeRecommendation().action;
+    const suggestedMode = modeForAction(action);
+    const mode = ['progress','hold','reduce'].includes(suggestedMode) ? suggestedMode : 'hold';
+    document.getElementById('manual-mode').value = mode;
+    document.getElementById('manual-mode-wrap').style.display = '';
+    plan = manualPlanForMode(mode);
+    document.getElementById('manual-title').textContent = 'Review the next-block draft';
+    document.getElementById('manual-sub').textContent = 'The previous manual block is copied and adjusted from the current recommendation. Edit every value before adding it.';
+    document.getElementById('manual-save-btn').textContent = 'Add reviewed block';
+    document.getElementById('manual-schedule-note').textContent = 'This is a draft, not a medical recommendation. Review the distances and workout details; the block is added after all weeks already in your plan.';
+  } else {
+    plan = defaultManualPlan();
+    document.getElementById('manual-mode-wrap').style.display = 'none';
+    document.getElementById('manual-title').textContent = 'Create a manual block';
+    document.getElementById('manual-sub').textContent = 'Choose your weekly running pattern and edit each week before adding this four-week block.';
+    document.getElementById('manual-save-btn').textContent = 'Add block to plan';
+    document.getElementById('manual-schedule-note').textContent = 'The block is scheduled after the weeks already in your plan. Distances are your inputs; review the weekly total before saving.';
+  }
+  document.getElementById('manual-day-settings').style.display='';
+  manualWorkingPlan = plan;
+  manualSelectedDays = DAYS.filter(day=>plan.days.includes(day));
+  document.getElementById('manual-weeks').innerHTML = '';
+  document.querySelectorAll('#manual-days button').forEach(button=>{
+    const buttonDay = DAYS.find(value=>button.textContent===value.slice(0,2));
+    button.classList.toggle('on', manualSelectedDays.includes(buttonDay));
+  });
+  document.getElementById('manual-longday').innerHTML = '';
+  document.getElementById('manual-qualityday').innerHTML = '';
+  const longOptions = manualSelectedDays.map(day=>`<option value="${day}">${day}</option>`).join('');
+  document.getElementById('manual-longday').innerHTML = longOptions;
+  document.getElementById('manual-qualityday').innerHTML = manualSelectedDays
+    .filter(day=>day!==plan.longRunDay).map(day=>`<option value="${day}">${day}</option>`).join('')
+    || '<option value="">Not scheduled</option>';
+  document.getElementById('manual-longday').value = plan.longRunDay;
+  document.getElementById('manual-qualityday').value = plan.qualityDay || '';
+  updateManualDayOptions();
+  updateManualTotals();
+
+  updateManualScheduleNote(nextCycleAnchor());
+  document.getElementById('manualBlockModal').classList.add('open');
+}
+function updateManualDraftFromMode(){
+  if(manualBuilderKind!=='next') return;
+  const currentWeeks = captureManualWeeksFromForm();
+  const plan = manualPlanForMode(document.getElementById('manual-mode').value);
+  plan.weeks.forEach((week,index)=>{
+    const currentRuns = new Map((currentWeeks[index].runs || []).map(run=>[run.day,run]));
+    week.runs.forEach(run=>{
+      const prior = currentRuns.get(run.day);
+      if(prior) Object.assign(run,{
+        details:prior.details,
+        workoutType:prior.workoutType,
+        intervalStructure:prior.intervalStructure,
+        targetPace:prior.targetPace
+      });
+    });
+  });
+  manualWorkingPlan = plan;
+  renderManualWeeks(plan.weeks);
+  updateManualTotals();
+}
+function closeManualBlock(){
+  document.getElementById('manualBlockModal').classList.remove('open');
+  manualBuilderSource = null;
+  manualWorkingPlan = null;
+  document.getElementById('manual-day-settings').style.display = '';
+}
+function saveManualBlock(){
+  if(!manualSelectedDays.length){ alert('Choose at least one run day.'); return; }
+  const longRunDay = document.getElementById('manual-longday').value;
+  const qualityDay = manualSelectedDays.length>1 ? document.getElementById('manual-qualityday').value : null;
+  if(!manualSelectedDays.includes(longRunDay)){ alert('Choose a long-run day from your selected run days.'); return; }
+  if(manualSelectedDays.length>1 && (!qualityDay || qualityDay===longRunDay || !manualSelectedDays.includes(qualityDay))){
+    alert('Choose a quality-run day that is different from the long-run day.'); return;
+  }
+  const weeks = captureManualWeeksFromForm();
+  for(let index=0;index<weeks.length;index++){
+    const week=weeks[index];
+    const activeRuns = week.runs.filter(run=>manualSelectedDays.includes(run.day));
+    const editableRuns = activeRuns.filter(run=>!week.readOnly&&!run.completed);
+    if(editableRuns.some(run=>!Number.isFinite(run.distanceKm)||run.distanceKm<=0)){
+      alert(`Enter a positive distance for every run in week ${index+1}.`);
+      return;
+    }
+    if(editableRuns.some(run=>run.role==='quality'
+      && (!run.workoutType.trim()||!run.intervalStructure.trim()||!run.targetPace.trim()))){
+      alert(`Add the workout type, intervals, and target pace for the quality run in week ${index+1}.`);
+      return;
+    }
+    activeRuns.forEach(run=>{run.distanceKm=round1(run.distanceKm);});
+  }
+  const baselineWeek=weeks[Math.min(2,weeks.length-1)];
+  const plan = {
+    days:manualSelectedDays.slice(), longRunDay, qualityDay,
+    baselines:summarizeManualRuns(baselineWeek.runs
+      .filter(run=>manualSelectedDays.includes(run.day))),
+    weeks,
+    preserveRoles:!!manualWorkingPlan.preserveRoles
+  };
+  if(manualBuilderKind==='edit'){
+    saveCurrentBlockEdits(plan);
+    return;
+  }
+  const mode = manualBuilderKind==='next' ? document.getElementById('manual-mode').value : 'manual';
+  const paces = manualBuilderKind==='next'
+    ? manualPlanForMode(mode).paces
+    : safePaces(DB.workspace.paces);
+  const cycleNumber = DB.cycles.reduce((largest,cycle)=>Math.max(largest,cycle.number||0),0)+1;
+  const anchor = nextCycleAnchor();
+  const newWeeks = plan.weeks.map((weekPlan,index)=>{
+    const weekStart = addDays(anchor,index*7);
+    const type = index===3 ? 'deload' : 'build';
+    const distances = summarizeManualRuns(manualRunsForWeek(weekPlan,plan));
+    const week = {
+      id:'w'+Date.now()+'_'+index+'_'+Math.random().toString(36).slice(2,6),
+      cycleNumber, cycleWeekIndex:index, type,
+      startDate:isoDate(weekStart), endDate:isoDate(addDays(weekStart,6)),
+      dist:{long:distances.longKm, quality:distances.qualityKm, easy:distances.easyKm},
+      paces, finalized:false, sessions:[], manual:true
+    };
+    week.sessions = buildManualWeekSessions(week,plan,weekPlan);
+    return week;
+  });
+  const cycleBaselines = {...plan.baselines};
+  DB.cycles.push({
+    number:cycleNumber, mode:manualBuilderKind==='next' ? `manual-${mode}` : 'manual',
+    baselines:cycleBaselines, paces, createdAt:isoDate(new Date()), manualPlan:plan
+  });
+  DB.weeks.push(...newWeeks);
+  save();
+  closeManualBlock();
+  renderAll();
+}
+function saveCurrentBlockEdits(plan){
+  const cycle=manualBuilderSource;
+  if(!cycle){ alert('The training block could not be found.'); return; }
+  const originalWeeks=DB.weeks.filter(week=>week.cycleNumber===cycle.number);
+  const weeksByIndex=new Map(originalWeeks.map(week=>[week.cycleWeekIndex,week]));
+  plan.weeks.forEach((weekPlan,index)=>{
+    const week=weeksByIndex.get(index);
+    if(!week||weekPlan.readOnly) return;
+    const rebuilt=buildManualWeekSessions(week,plan,weekPlan);
+    const newById=new Map(rebuilt.map(session=>[session.id,session]));
+    const preserved=week.sessions.filter(session=>getDone(session.id));
+    const untouched=week.sessions.filter(session=>!newById.has(session.id));
+    week.sessions=[...rebuilt.filter(session=>!getDone(session.id)),...preserved,...untouched];
+    const summary=summarizeManualRuns(manualRunsForWeek(weekPlan,plan));
+    week.dist={long:summary.longKm,quality:summary.qualityKm,easy:summary.easyKm};
+    week.edited=true;
+  });
+  cycle.manualPlan=plan;
+  cycle.baselines={...plan.baselines};
+  save();
+  closeManualBlock();
+  renderAll();
 }
 
 function generateNextCycle(explicitMode){
@@ -1621,9 +2201,14 @@ function typeBadgeColor(week){
   return [ 'var(--p1)','var(--p2)','var(--p3)' ][week.cycleWeekIndex % 3];
 }
 function typeLabel(week){
-  if(week.type==='deload') return 'Deload';
-  if(week.type==='recovery') return 'Re-entry';
-  return 'Cycle '+week.cycleNumber+' · Build '+(week.cycleWeekIndex+1);
+  if(week.edited){
+    if(week.type==='deload') return 'Edited · Deload';
+    if(week.type==='recovery') return 'Edited · Re-entry';
+    return `Edited · Cycle ${week.cycleNumber} · Build ${week.cycleWeekIndex+1}`;
+  }
+  if(week.type==='deload') return week.manual ? 'Manual · Deload' : 'Deload';
+  if(week.type==='recovery') return week.manual ? 'Manual · Re-entry' : 'Re-entry';
+  return (week.manual ? 'Manual · ' : '')+'Cycle '+week.cycleNumber+' · Build '+(week.cycleWeekIndex+1);
 }
 
 function renderWeek(w, isCurrent, isPast){
@@ -1650,6 +2235,7 @@ function renderWeek(w, isCurrent, isPast){
       <div class="wchev${isOpen?' open':''}">▾</div>
     </div>
     <div class="wbody${isOpen?' open':''}" id="wbody-${w.id}">
+      ${isCurrent ? `<button class="edit-block-btn" onclick="openCurrentBlockEditor(${w.cycleNumber})">Edit this block</button>` : ''}
       ${renderCalendar(w)}
     </div>
   </div>`;
@@ -1793,6 +2379,7 @@ function renderRules(){
     'Logging a completed activity compares actual pace and distance against the plan, not just done/not-done — that real data feeds pace and load decisions for future cycles.',
     'Missing a week — sickness, travel, life — is a normal part of training. The plan re-enters gently rather than picking up exactly where it left off.'
   ];
+  if(DB.cycles.some(c=>c.manualPlan)) rules.push('Manual blocks use the run days, distances, and workout descriptions you chose; the next-block draft is editable before it is added.');
   const focusLine = {
     distance: 'Focus is on building distance: each progression cycle grows volume first, with pace nudged gently.',
     speed: 'Focus is on building speed: each progression cycle pushes pace harder and trims volume slightly so the harder quality work can be absorbed safely.',
@@ -2202,7 +2789,14 @@ function applyIntakeAndCalibrate(){
   const cw = findCurrentWeek();
   if(cw){
     const cycleEntry = DB.cycles.find(c=>c.number===cw.cycleNumber);
-    if(cycleEntry){ cycleEntry.baselines = { ...baselines }; cycleEntry.paces = { ...paces }; }
+    if(cycleEntry){
+      if(cycleEntry.manualPlan){
+        cycleEntry.paces = { ...paces };
+      } else {
+        cycleEntry.baselines = { ...baselines };
+        cycleEntry.paces = { ...paces };
+      }
+    }
     rebuildCurrentBlock();
   } else if(DB.weeks.length===0){
     generateCycle('hold');

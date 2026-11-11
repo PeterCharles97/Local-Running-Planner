@@ -49,6 +49,29 @@ choose whether the next cycle should progress, hold, or reduce training load.
 `renderAll()` turns the current state into the visible page. The code is
 organized into labeled sections in `app.js`; start there when tracing a feature.
 
+## Manual training blocks
+
+Plan controls offer an optional manual block builder alongside automatic
+generation. Choose run days and assign long- and quality-run days, then edit
+the distance and workout for each individual run in every week. Long and easy
+runs have their own execution notes. For quality runs, choose the workout type,
+write the intervals and recovery, and enter a target pace. The builder creates
+three build weeks and one deload week and schedules them after the weeks already
+in the plan.
+
+Open the active week and choose **Edit this block** to adjust the unfinished
+runs in the current cycle without waiting for it to end. Completed runs and
+earlier weeks are kept unchanged; the editor does not add another block.
+
+After creating a manual block, **Draft next block from manual block** copies its
+structure and offers a progress, hold, or reduce suggestion based on the
+planner's current recommendation. The suggested distances and workout details
+remain editable; the next block is only added after review. Manual blocks use
+the normal completion and activity-history tracking. Week four is labeled as a
+deload, but its distances and workout remain exactly as entered. A saved race
+date produces an overlap reminder; manual blocks do not automatically taper
+or stop on race day.
+
 ## Offline behavior
 
 The service worker precaches the page, stylesheet, and script when installed.
