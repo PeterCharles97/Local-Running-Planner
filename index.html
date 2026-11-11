@@ -22,6 +22,9 @@
     <div class="prog-bg"><div class="prog-fill" id="prog-fill" style="width:0%"></div></div>
     <div class="prog-lbl" id="prog-lbl">- / -</div>
   </div>
+  <button class="health-toggle" id="health-toggle" onclick="toggleHealthControls()" aria-expanded="false">
+    <span id="health-toggle-label">Health status · Healthy</span><span class="sec-chev" id="health-chev">▾</span>
+  </button>
   <div class="status-row" id="status-row"></div>
   <div id="symptom-row"></div>
 </div>
@@ -52,7 +55,7 @@
   <button class="garmin-btn" onclick="openGarmin()">⌚ Log a completed activity</button>
   <div class="garmin-note">Log a run's actual distance, pace, and feel — it links to the planned session and sharpens future recommendations.</div>
 
-  <div class="rules-sec" id="rules-root"></div>
+  <div id="rules-root"></div>
 </div>
 
 <!-- Add / Edit extra workout modal -->

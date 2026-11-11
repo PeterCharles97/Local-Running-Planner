@@ -135,7 +135,7 @@ function defaultDB(){
       // Pruned to the last 6 entries. { cycleNumber, weekIndex, type, rate, keyDone, qualityPaceDeltaMin, cutShort, strain }
       weekHistory: []
     },
-    meta: { lastPruneAt: null, onboarded: false, prevStatus: null, prevStableReturnWeeks: null, pendingSettingNote: null, datesRealigned: true, installPromptSeen: false }
+    meta: { lastPruneAt: null, onboarded: false, prevStatus: null, prevStableReturnWeeks: null, pendingSettingNote: null, datesRealigned: true, installPromptSeen: false, healthControlsOpen: false, showPlanAdaptation: false, dismissedDisruption: false }
   };
 }
 
@@ -1474,10 +1474,20 @@ function renderHeader(){
 }
 
 function renderStatusRow(){
+  const activeStatus=STATUS_OPTIONS.find(option=>option.v===DB.workspace.status)||STATUS_OPTIONS[0];
+  const expanded=!!DB.meta.healthControlsOpen;
+  document.getElementById('health-toggle-label').textContent=`Health status · ${activeStatus.l}`;
+  document.getElementById('health-toggle').setAttribute('aria-expanded',String(expanded));
+  document.getElementById('health-chev').classList.toggle('open',expanded);
+  document.getElementById('status-row').classList.toggle('open',expanded);
   document.getElementById('status-row').innerHTML = STATUS_OPTIONS.map(o=>
     `<button class="status-pill ${o.v} ${DB.workspace.status===o.v?'on':''}" onclick="setStatus('${o.v}')">${o.l}</button>`
   ).join('');
   renderSymptomRow();
+}
+function toggleHealthControls(){
+  DB.meta.healthControlsOpen=!DB.meta.healthControlsOpen;
+  save();renderStatusRow();
 }
 
 function renderSymptomRow(){
@@ -1526,10 +1536,17 @@ function renderRecommendation(){
   const rec = computeRecommendation();
   const cls = rec.tone==='warn' ? 'warn' : rec.tone==='alert' ? 'alert' : '';
   const ico = rec.tone==='alert' ? '⚠️' : rec.tone==='warn' ? '💡' : '✅';
+  const interruptionNotice=DB.rolling.disruption&&rec.action==='reentry'
+    &&rec.text.startsWith('Training was interrupted recently');
+  if(!DB.rolling.disruption) DB.meta.dismissedDisruption=false;
+  const hideInterruption=interruptionNotice&&DB.meta.dismissedDisruption;
   const undo = (DB.meta.prevStatus != null)
     ? `<button class="undo-btn" onclick="revertStatus()">Undo — back to “${STATUS_OPTIONS.find(o=>o.v===DB.meta.prevStatus)?.l || DB.meta.prevStatus}”</button>`
     : '';
-  let html = `<div class="rec-banner ${cls}"><span class="rec-ico">${ico}</span><span>${rec.text}${undo}</span></div>`;
+  const dismiss = interruptionNotice
+    ? '<button class="notice-hide-btn" onclick="dismissInterruptionNotice()" aria-label="Hide training interruption notice">Hide</button>'
+    : '';
+  let html = hideInterruption ? '' : `<div class="rec-banner ${cls}"><span class="rec-ico">${ico}</span><span>${rec.text}${undo}</span>${dismiss}</div>`;
 
   // Settings-changed note: progression settings only affect the NEXT generated
   // cycle, so we tell the athlete rather than silently doing nothing on rebuild.
@@ -1571,6 +1588,10 @@ function renderRecommendation(){
   }
 
   document.getElementById('rec-root').innerHTML = html;
+}
+function dismissInterruptionNotice(){
+  DB.meta.dismissedDisruption=true;
+  save();renderRecommendation();
 }
 function applyRacePhase(phaseKey){
   DB.meta.prevStatus = DB.meta.prevStatus; // leave status-undo untouched
@@ -2393,10 +2414,20 @@ function renderRules(){
   if(hrZones(ws.hr)) rules.push('Heart-rate zones are set, so logged runs are checked against the zone each session was meant to sit in.');
   if(ws.returnToRunMode) rules.push('Return-to-run / sensitivity mode is on: progression steps are smaller and slower than standard.');
   if(ws.conservatism==='conservative') rules.push('Conservative progression is set: distance increases are kept modest cycle to cycle.');
+  const expanded=!!DB.meta.showPlanAdaptation;
   document.getElementById('rules-root').innerHTML = `
-    <div class="rules-title">How this plan adapts</div>
-    ${rules.map(r=>`<div class="rules-rule"><div class="rules-dot"></div>${r}</div>`).join('')}
+    <button class="sec-hdr rules-toggle" onclick="togglePlanAdaptation()" aria-expanded="${expanded}">
+      <span class="sec-hdr-lbl">How this plan adapts</span>
+      <span class="sec-chev${expanded?' open':''}">▾</span>
+    </button>
+    <div class="rules-sec${expanded?' open':''}">
+      ${rules.map(r=>`<div class="rules-rule"><div class="rules-dot"></div>${r}</div>`).join('')}
+    </div>
   `;
+}
+function togglePlanAdaptation(){
+  DB.meta.showPlanAdaptation=!DB.meta.showPlanAdaptation;
+  save();renderRules();
 }
 
 function toggleSection(name){
