@@ -78,3 +78,8 @@ The service worker precaches the page, stylesheet, and script when installed.
 It serves cached files immediately and refreshes them from the network when
 available. Athlete data stays in `localStorage`; updating the app does not clear
 it.
+
+Health status controls and the plan-adaptation explanation are collapsed by
+default to keep the main view focused. Their open/closed state is saved on the
+device. A training-interruption notice can be hidden until the interruption
+condition clears.
