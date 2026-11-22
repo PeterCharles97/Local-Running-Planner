@@ -56,6 +56,26 @@
   <div class="garmin-note">Log a run's actual distance, pace, and feel — it links to the planned session and sharpens future recommendations.</div>
 
   <div id="rules-root"></div>
+
+  <details class="privacy-section">
+    <summary>Privacy</summary>
+    <div class="privacy-content">
+      <p>Your training plan, settings, and activity logs are saved in this browser on this device. This app has no account or sync service, and it does not send your plan data to the developer.</p>
+      <p>Anyone with access to this browser profile may be able to see its saved plan. Avoid entering details you would not want another device user to see. Clearing this app's browser data or using another device may make the plan unavailable. Export a backup from Settings to keep a copy; the downloaded file may contain sensitive details, so store it somewhere private. To erase the plan, open Settings and choose <strong>Reset everything &amp; start fresh</strong>.</p>
+      <p>The website host may receive standard connection information when you visit. The Ko-fi badge image is loaded from Ko-fi, so Ko-fi receives a request when this page loads. Following the support link takes you to Ko-fi, whose privacy practices apply there.</p>
+    </div>
+  </details>
+
+  <footer class="support-footer">
+    <p class="support-title">Feedback or ideas?</p>
+    <p class="support-note">Found a bug or have a suggestion? Share it on GitHub.</p>
+    <a class="feedback-link" href="https://github.com/PeterCharles97/Local-Running-Planner/issues" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Send feedback</a>
+    <p class="support-title">Enjoying the planner?</p>
+    <p class="support-note">If it’s been useful, you can optionally support its development.</p>
+    <a href="https://ko-fi.com/R8F72B4ZQR" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">
+      <img height="36" src="https://storage.ko-fi.com/cdn/kofi6.png?v=6" alt="Buy me a coffee on Ko-fi">
+    </a>
+  </footer>
 </div>
 
 <!-- Add / Edit extra workout modal -->
@@ -331,6 +351,11 @@
     </div>
     <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--bd);">
       <button class="ctrl-btn" style="width:100%;margin-bottom:8px;" onclick="closeSettings(); showInstallHelp();">📲 Install / use offline</button>
+      <button class="ctrl-btn" style="width:100%;margin-bottom:8px;" onclick="exportPlanData()">Export plan data</button>
+      <div class="ctrl-note" style="padding-top:0;padding-bottom:8px;">Downloads a JSON backup of your plan, settings, and activity history. The file may contain sensitive health and training details; store it somewhere private.</div>
+      <button class="ctrl-btn" style="width:100%;margin-bottom:8px;" onclick="document.getElementById('plan-import-file').click()">Import plan data</button>
+      <input id="plan-import-file" type="file" accept=".json,application/json" hidden onchange="importPlanData(this)">
+      <div class="ctrl-note" style="padding-top:0;padding-bottom:8px;">Importing replaces the plan currently saved in this browser. Export it first if you want to keep a copy.</div>
       <button class="ctrl-btn danger" style="width:100%;" onclick="resetEverything()">Reset everything &amp; start fresh</button>
       <div class="ctrl-note" style="padding-top:6px;padding-bottom:0;">Clears all plans, settings, logged activities, and history. This can't be undone.</div>
     </div>
@@ -409,6 +434,9 @@
       <div class="ob-intro-row"><span>🔄</span><span>Rolling 4-week cycles that adjust to how your training actually goes</span></div>
       <div class="ob-intro-row"><span>🎯</span><span>Point it at a race and it plans backwards to the day</span></div>
       <div class="ob-intro-row"><span>📴</span><span>Works offline, keeps your data on your device</span></div>
+    </div>
+    <div class="training-safety-note" role="note">
+      <strong>Training safety:</strong> This planner provides general training guidance, not medical advice. Adapt or stop your training if you experience pain or have health concerns, and consult a qualified health professional when appropriate.
     </div>
 
     <div class="form-grp">

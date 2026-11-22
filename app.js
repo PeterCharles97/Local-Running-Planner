@@ -146,6 +146,10 @@ function load(){
     const raw = localStorage.getItem(STORAGE_KEY);
     DB = raw ? JSON.parse(raw) : defaultDB();
   } catch(e){ DB = defaultDB(); }
+  normalizeDB();
+}
+
+function normalizeDB(){
   // shallow-fill any missing slices (forward compatible with older saves)
   const d = defaultDB();
   for(const k in d) if(!(k in DB)) DB[k] = d[k];
@@ -2495,6 +2499,97 @@ function toggleSetDay(btn,d){
   btn.classList.toggle('on');
 }
 function closeSettings(){ document.getElementById('settingsModal').classList.remove('open'); }
+function exportPlanData(){
+  try{
+    const backup = {
+      format: 'local-running-planner-backup',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      data: DB
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `local-running-planner-backup-${isoDate(new Date())}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  }catch(e){
+    console.error('Could not export plan data.', e);
+    alert('The plan backup could not be created. Please try again in a supported browser.');
+  }
+}
+function isPlanBackup(backup){
+  if(!backup || typeof backup!=='object' || Array.isArray(backup)) return false;
+  if(backup.format!=='local-running-planner-backup' || backup.version!==1) return false;
+  const data=backup.data;
+  if(!data || typeof data!=='object' || Array.isArray(data)) return false;
+  if(!data.workspace || typeof data.workspace!=='object' || Array.isArray(data.workspace)) return false;
+  if(!['cycles','weeks','extras','results'].every(key=>Array.isArray(data[key]))) return false;
+  if(!data.overrides || typeof data.overrides!=='object' || Array.isArray(data.overrides)) return false;
+  if(!data.rolling || typeof data.rolling!=='object' || Array.isArray(data.rolling)) return false;
+  if(!data.meta || typeof data.meta!=='object' || Array.isArray(data.meta)) return false;
+  return ['days','done','notes'].every(key=>
+    data.overrides[key] && typeof data.overrides[key]==='object' && !Array.isArray(data.overrides[key])
+  );
+}
+async function importPlanData(input){
+  const file=input.files && input.files[0];
+  if(!file) return;
+
+  const previousDB=DB;
+  const previousOpenSet=new Set(openSet);
+  let previousSaved=null;
+  let storageUpdated=false;
+  try{
+    const backup=JSON.parse(await file.text());
+    if(!isPlanBackup(backup)){
+      alert('This file is not a supported Local Running Planner backup.');
+      return;
+    }
+    if(!confirm('Import this backup and replace the plan currently saved in this browser? This cannot be undone. Export your current plan first if you want to keep it.')) return;
+
+    previousSaved=localStorage.getItem(STORAGE_KEY);
+    DB=backup.data;
+    normalizeDB();
+    finalizePastWeeks();
+    pruneOldData();
+    const serialized=JSON.stringify(DB);
+    localStorage.setItem(STORAGE_KEY,serialized);
+    storageUpdated=true;
+    if(localStorage.getItem(STORAGE_KEY)!==serialized) throw new Error('Imported data did not persist to browser storage.');
+
+    const currentWeek=findCurrentWeek();
+    openSet=new Set(currentWeek ? [currentWeek.id] : []);
+    storageWorks=true;
+    renderAll();
+    closeSettings();
+    alert('Backup imported successfully.');
+  }catch(e){
+    DB=previousDB;
+    openSet=previousOpenSet;
+    let restoreFailed=false;
+    if(storageUpdated){
+      try{
+        if(previousSaved===null) localStorage.removeItem(STORAGE_KEY);
+        else localStorage.setItem(STORAGE_KEY,previousSaved);
+        if(localStorage.getItem(STORAGE_KEY)!==previousSaved) throw new Error('Previous plan did not persist during rollback.');
+      }catch(restoreError){
+        restoreFailed=true;
+        console.error('Could not restore the previous saved plan after import failed.', restoreError);
+      }
+    }
+    console.error('Could not import plan backup.',e);
+    alert(restoreFailed
+      ? 'The backup could not be imported, and the previous saved data could not be restored. Reload the app and check your plan before continuing.'
+      : 'The backup could not be imported. Your current plan has been kept. Check that the file is a valid planner backup and try again.');
+    renderAll();
+  }finally{
+    input.value='';
+  }
+}
 function resetEverything(){
   if(!confirm('Reset everything and start fresh? This permanently clears all plans, settings, logged activities, and history. This cannot be undone.')) return;
   // Second confirm — this is destructive.

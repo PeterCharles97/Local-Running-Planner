@@ -30,6 +30,11 @@ uses inline event handlers such as `onclick="openSettings()"`.
 
 The storage key is `rolling_training_platform_v1`. Clearing browser site data
 or using a different browser/device will remove or not include that saved plan.
+Use **Settings → Export plan data** to download a JSON backup containing the
+saved plan, settings, and activity history. The backup may contain sensitive
+health and training details, so store it somewhere private. Use **Settings →
+Import plan data** to restore a backup; importing replaces the plan currently
+saved in that browser.
 
 ## Understanding the planner logic
 
