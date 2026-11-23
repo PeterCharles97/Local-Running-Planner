@@ -1,7 +1,21 @@
-# Local Running Planner
+# Free Running Training Planner
 
-A running planner that works locally in your browser. The plan is stored on
-your device, so it does not need an account or a server.
+[Open the free running planner](https://petercharles97.github.io/Local-Running-Planner/)
+
+![Planner dashboard showing an adaptive four-week running schedule](./planner-screenshot.png)
+
+Build a running plan around your schedule with adaptive four-week cycles,
+race planning, and offline access. No account is needed: your training plan is
+saved in your browser on your device.
+
+Features include:
+
+- Adaptive rolling training cycles with progress, hold, and recovery options.
+- Customizable run days, pace guidance, race planning, and manual training blocks.
+- Local browser storage, backup export/import, and offline use after loading.
+
+The planner offers general training guidance, not medical advice. Adapt or
+stop training if you experience pain or have health concerns.
 
 ## Project layout
 
